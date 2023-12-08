@@ -1,21 +1,24 @@
 package org.gyk.netty_server;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.http.HttpContentCompressor;
-import io.netty.handler.codec.http.HttpObjectAggregator;
-import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.*;
+import io.netty.util.AttributeKey;
+import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.gyk.netty_server.handler.SecondHandler;
+import org.gyk.netty_server.util.BodyReader;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.util.StopWatch;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 
 @SpringBootApplication
 @Slf4j
@@ -41,8 +44,36 @@ public class NettyServer {
                         public void initChannel(SocketChannel ch) {
                             ch.pipeline()
                                     .addLast("codec", new HttpServerCodec())
-                                    .addLast("compressor", new HttpContentCompressor())
-                                    .addLast("aggregator", new HttpObjectAggregator(65536))
+                                    .addLast("bb", new ChannelInboundHandlerAdapter() {
+                                        final AttributeKey<BodyReader> KEY = AttributeKey.valueOf("IO");
+
+                                        @Override
+                                        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                                            if (msg instanceof HttpRequest) {
+                                                HttpRequest request = (HttpRequest) msg;
+                                                String contentType = request.headers().get("Content-Type");
+                                                log.info("ct--->{}", contentType);
+                                                int i = contentType.indexOf(BodyReader.BOUNDARY_FLAG);
+                                                byte[] boundary = contentType.substring(i + BodyReader.BOUNDARY_FLAG.length()).getBytes(StandardCharsets.UTF_8);
+                                                int boundaryPrefixLength = boundary.length + 2;
+                                                BodyReader bodyReader = new BodyReader(boundaryPrefixLength);
+                                                bodyReader.beginParse();
+                                                bodyReader.setSkip(bodyReader.getBoundaryPrefixLength());
+                                                ctx.channel().attr(KEY).set(bodyReader);
+                                            } else if (msg instanceof LastHttpContent) {
+                                                ctx.fireChannelRead(ctx.channel().attr(KEY).get());
+                                            } else {
+                                                HttpContent httpContent = (HttpContent) msg;
+                                                BodyReader bodyReader = ctx.channel().attr(KEY).get();
+                                                ByteBuf byteBuf = httpContent.content();
+                                                if (!bodyReader.hasBeginParse()) {
+                                                    byteBuf.readerIndex(bodyReader.getBoundaryPrefixLength());
+                                                    bodyReader.beginParse();
+                                                }
+                                                handler.readBody(byteBuf, bodyReader);
+                                            }
+                                        }
+                                    })
                                     .addLast("handler", handler);
                         }
                     })
