@@ -61,7 +61,11 @@ public class NettyServer {
                                                 bodyReader.setSkip(bodyReader.getBoundaryPrefixLength());
                                                 ctx.channel().attr(KEY).set(bodyReader);
                                             } else if (msg instanceof LastHttpContent) {
-                                                ctx.fireChannelRead(ctx.channel().attr(KEY).get());
+                                                LastHttpContent lastHttpContent = (LastHttpContent) msg;
+                                                BodyReader bodyReader = ctx.channel().attr(KEY).get();
+                                                handler.readBody(lastHttpContent.content(), bodyReader);
+                                                ctx.fireChannelRead(bodyReader);
+                                                ReferenceCountUtil.release(msg);
                                             } else {
                                                 HttpContent httpContent = (HttpContent) msg;
                                                 BodyReader bodyReader = ctx.channel().attr(KEY).get();
@@ -71,6 +75,7 @@ public class NettyServer {
                                                     bodyReader.beginParse();
                                                 }
                                                 handler.readBody(byteBuf, bodyReader);
+                                                ReferenceCountUtil.release(msg);
                                             }
                                         }
                                     })

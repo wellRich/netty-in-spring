@@ -1,12 +1,15 @@
 package org.gyk.netty_server.util;
 
+import io.netty.buffer.ByteBuf;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -30,7 +33,7 @@ public final class BodyReader implements Serializable {
     //表单字段中的非文件字段
     private final Map<String, String> formFields = new HashMap<>();
 
-    private final Map<String, byte[]> uploadFiles = new HashMap<>();
+    private final Map<String, List<byte[]>> uploadFiles = new HashMap<>();
 
     public boolean beginRead = false;
 
@@ -50,7 +53,7 @@ public final class BodyReader implements Serializable {
      */
     private int bytes = 0;
 
-    private byte[] cachedByteArray;
+    private byte[] cachedBytes;
 
     private String cacheFileFormName;
 
@@ -127,12 +130,12 @@ public final class BodyReader implements Serializable {
         }
     }
 
-    public byte[] getCachedByteArray() {
-        return cachedByteArray;
+    public byte[] getCachedBytes() {
+        return cachedBytes;
     }
 
-    public void setCachedByteArray(byte[] cachedByteArray) {
-        this.cachedByteArray = cachedByteArray;
+    public void setCachedBytes(byte[] cachedBytes) {
+        this.cachedBytes = cachedBytes;
     }
 
     public String getCacheFileFormName() {
@@ -155,11 +158,20 @@ public final class BodyReader implements Serializable {
     }
 
     public void addFile(String fileName, byte[] data){
-        uploadFiles.put(fileName, data);
+        uploadFiles.compute(fileName, (k, v) -> {
+           if(v != null){
+               v.add(data);
+               return v;
+           }else {
+               List<byte[]> d = new ArrayList<>();
+               d.add(data);
+               return d;
+           }
+        });
     }
 
 
-    public Map<String, byte[]> getUploadFiles(){
+    public Map<String, List<byte[]>> getUploadFiles(){
         return uploadFiles;
     }
 
